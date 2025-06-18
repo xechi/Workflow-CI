@@ -1,59 +1,80 @@
-name: Train and Deploy Diabetes Model
+name: CI/CD MLflow
 
 on:
   push:
-    paths:
-      - "MLProject/**"
-  workflow_dispatch:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CSV_URL: "MLProject/diabetes_clean.csv"
+  TARGET_VAR: "Outcome"
 
 jobs:
-  train-and-deploy:
+  ci-mlflow:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up Miniconda
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          auto-update-conda: true
-          python-version: 3.12.7
-          environment-file: MLProject/conda.yaml
-          activate-environment: diabetes-env
+          python-version: "3.12"
 
-      - name: Install MLflow CLI
-        run: pip install mlflow
-
-      - name: Run MLflow Project (Train Model)
+      - name: Install Dependencies
         run: |
-          cd MLProject
-          conda run -n diabetes-env mlflow run . -P data_path=diabetes_clean.csv
+          pip install --upgrade pip
+          pip install mlflow scikit-learn pandas numpy
 
-      - name: Find Latest Run ID
-        id: get-run-id
+      - name: Run MLFlow Project
         run: |
-          RUN_ID=$(ls ~/.mlflow/mlruns/0 | tail -n 1)
-          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          mlflow run MLProject --env-manager=local
 
-      - name: Save MLflow Artifacts
+      - name: Get latest MLFlow run_id
+        id: get_run_id
         run: |
-          mkdir -p mlruns_artifacts
-          cp -r MLProject/model mlruns_artifacts/
+          RUN_ID=$(ls -td mlruns/0/*/ | head -n 1 | cut -d'/' -f3)
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "Latest run_id: $RUN_ID"
 
-      - name: Upload MLflow Artifacts
+      - name: Upload ML Model Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mlflow-artifacts
-          path: mlruns_artifacts
+          name: diabetes-model-artifact
+          path: mlruns/0/${{ env.RUN_ID }}/artifacts/model
 
-      - name: Build Docker Image from MLflow Model
+      - name: Build Docker Image
         run: |
-          cd ~/.mlflow/mlruns/0/${{ steps.get-run-id.outputs.run_id }}/artifacts/model
-          mlflow models build-docker -n diabetes_model
+          mlflow models build-docker --model-uri "runs:/$RUN_ID/model" --name "diabetes-prediction-model"
 
-      - name: Push Docker Image to Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Tag Docker Image
         run: |
-          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-          docker tag diabetes_model ${{ secrets.DOCKER_USERNAME }}/diabetes_model:latest
-          docker push ${{ secrets.DOCKER_USERNAME }}/diabetes_model:latest
+          docker tag diabetes-prediction-model ${{ secrets.DOCKERHUB_USERNAME }}/diabetes-prediction-model:latest
+
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/diabetes-prediction-model:latest
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and Push to GitHub Packages
+        run: |
+          OWNER_LOWER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          docker tag diabetes-prediction-model ghcr.io/${OWNER_LOWER}/diabetes-prediction-model:latest
+          docker push ghcr.io/${OWNER_LOWER}/diabetes-prediction-model:latest
