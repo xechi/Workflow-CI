@@ -31,4 +31,7 @@ model.fit(X_train, y_train)
 acc = model.score(X_test, y_test)
 mlflow.log_metric("accuracy", acc)
 
+# Save model
+mlflow.sklearn.log_model(model, "model")
+
 print(f"Accuracy: {acc:.4f}")
