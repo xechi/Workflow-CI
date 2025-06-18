@@ -28,7 +28,7 @@ jobs:
       - name: Run MLflow Project (Train Model)
         run: |
           cd MLProject
-          mlflow run . -P data_path=diabetes_clean.csv
+          conda run -n diabetes-env mlflow run . -P data_path=diabetes_clean.csv
 
       - name: Find Latest Run ID
         id: get-run-id
