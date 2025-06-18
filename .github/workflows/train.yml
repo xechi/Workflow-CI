@@ -39,7 +39,7 @@ jobs:
       - name: Save MLflow Artifacts
         run: |
           mkdir -p mlruns_artifacts
-          cp -r ~/.mlflow/mlruns mlruns_artifacts/
+          cp -r MLProject/model mlruns_artifacts/
 
       - name: Upload MLflow Artifacts
         uses: actions/upload-artifact@v4

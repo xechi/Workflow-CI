@@ -22,6 +22,7 @@ def train_model(data_path):
         model.fit(X_train, y_train)
         accuracy = model.score(X_test, y_test)
         mlflow.log_metric("accuracy", accuracy)
+        mlflow.sklearn.save_model(model, "model")
         print(f"Accuracy: {accuracy:.4f}")
 
 if __name__ == "__main__":
